@@ -21,19 +21,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Cache Docker layers
-        uses: actions/cache@v2
-        with:
-          path: /tmp/docker-build-cache
-          key: ${{ runner.os }}-docker-${{ hashFiles('**/Dockerfile') }}
-          restore-keys: |
-            ${{ runner.os }}-docker-
-
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
-        run: DOCKER_BUILDKIT=1 docker build -t $ECR_REPOSITORY:$IMAGE_TAG . --cache-from=type=local,src=/tmp/docker-build-cache --cache-to=type=local,dest=/tmp/docker-build-cache
+        run: DOCKER_BUILDKIT=1 docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
 
       - name: Push Docker image to Amazon ECR
         run: |
