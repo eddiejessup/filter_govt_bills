@@ -1,10 +1,10 @@
 import boto3
-
-
-DOMAIN = "bills.elliotmarsden.com"
-HOSTED_ZONE_ID = "Z04120032SGETY36T482H"
+import os
 
 def lambda_handler(event, context):
+    DOMAIN = os.environ['DOMAIN']
+    HOSTED_ZONE_ID = os.environ['HOSTED_ZONE_ID']
+    
     if event["detail"]["lastStatus"] == "RUNNING":
         print('Getting task ARN from event')
         containers = event["detail"]["containers"]

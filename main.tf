@@ -131,6 +131,10 @@ data "archive_file" "lambda" {
   output_path = "lambda_function_payload.zip"
 }
 
+data "aws_route53_zone" "existing" {
+  name = "elliotmarsden.com"
+}
+
 resource "aws_lambda_function" "ecs_task_state_change" {
   function_name    = "route53_sync"
   role             = aws_iam_role.lambda_role.arn
@@ -139,6 +143,12 @@ resource "aws_lambda_function" "ecs_task_state_change" {
   handler          = "lambda.lambda_handler"
   source_code_hash = data.archive_file.lambda.output_base64sha256
   timeout          = 30
+  environment {
+    variables = {
+      DOMAIN = "bills.elliotmarsden.com"
+      HOSTED_ZONE_ID = data.aws_route53_zone.existing.id
+    }
+  }
 }
 
 resource "aws_cloudwatch_event_target" "ecs_task_state_change_target" {
