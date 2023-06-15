@@ -14,7 +14,7 @@ provider "aws" {
 }
 
 resource "aws_ecs_cluster" "cluster" {
-  name = "filter-govt-bills-tf"
+  name = "filter-govt-bills"
 }
 
 resource "aws_ecs_task_definition" "task" {
@@ -65,4 +65,62 @@ resource "aws_ecs_service" "service" {
     security_groups  = ["sg-81a3ace4"]
     assign_public_ip = true
   }
+}
+
+resource "aws_cloudwatch_event_rule" "ecs_task_state_change" {
+  name        = "ecs-task-state-change"
+  description = "Capture ECS task state change events"
+
+  event_pattern = jsonencode({
+    source      = ["aws.ecs"],
+    detail-type = ["ECS Task State Change"]
+    detail = {
+      clusterArn = [aws_ecs_cluster.cluster.arn]
+      lastStatus = ["RUNNING"]
+    }
+  })
+}
+
+data "aws_iam_policy_document" "assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "lambda_role" {
+  name               = "lambda_role"
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+data "archive_file" "lambda" {
+  type        = "zip"
+  source_file = "lambda.py"
+  output_path = "lambda_function_payload.zip"
+}
+
+resource "aws_lambda_function" "ecs_task_state_change" {
+  function_name    = "route53_sync"
+  role             = aws_iam_role.lambda_role.arn
+  filename         = "lambda_function_payload.zip"
+  runtime          = "python3.10"
+  handler          = "lambda.lambda_handler"
+  source_code_hash = data.archive_file.lambda.output_base64sha256
+}
+
+resource "aws_cloudwatch_event_target" "ecs_task_state_change_target" {
+  rule      = aws_cloudwatch_event_rule.ecs_task_state_change.name
+  arn       = aws_lambda_function.ecs_task_state_change.arn
+  target_id = "EcsTaskStateChangeLambdaTarget"
 }
