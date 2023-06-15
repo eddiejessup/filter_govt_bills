@@ -8,6 +8,7 @@ on:
 env:
   AWS_REGION: eu-west-1
   ECR_REPOSITORY: filter-govt-bills
+  ECR_REGISTRY: 125839941772.dkr.ecr.eu-west-1.amazonaws.com
   IMAGE_TAG: latest
 
 jobs:
