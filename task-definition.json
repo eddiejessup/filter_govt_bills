@@ -14,7 +14,12 @@
                 }
             ],
             "essential": true,
-            "environment": [],
+            "environment": [
+                {
+                    "name": "PORT",
+                    "value": "80"
+                }
+            ],
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
