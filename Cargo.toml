@@ -1,0 +1,9 @@
+[package]
+name = "filter_govt_bills"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rss = "2.0.4"
+tiny_http = "0.12.0"
+ureq = "2.6.2"
