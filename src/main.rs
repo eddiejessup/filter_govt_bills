@@ -1,9 +1,15 @@
 use rss::Channel;
+use std::{env, process};
 use tiny_http::{Response, Server};
-use std::env;
 
 const RSS_FEED_URL: &str = "https://bills.parliament.uk/rss/publicbills.rss";
 const RSS_FEED_PATH: &str = "/bills.rss";
+
+#[derive(Debug)]
+enum StartupError {
+    ConfigError(env::VarError),
+    ServerError(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
 
 #[derive(Debug)]
 enum FetchError {
@@ -43,18 +49,47 @@ fn filter_rss_channel(channel: Channel) -> Channel {
     filtered
 }
 
+fn get_server() -> Result<Server, StartupError> {
+    let port = env::var("PORT").map_err(|e| StartupError::ConfigError(e))?;
+    Server::http(format!("0.0.0.0:{}", port)).map_err(|e| StartupError::ServerError(e))
+}
+
 fn main() {
-    let port = env::var("PORT").unwrap_or_else(|_| String::from("80"));
-    let server = Server::http(format!("0.0.0.0:{}", port)).unwrap();
+    let server = match get_server() {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("Error: {:?}", e);
+            process::exit(1);
+        }
+    };
+
+    let rss_header = match tiny_http::Header::from_bytes("Content-Type", "application/rss+xml") {
+        Ok(val) => val,
+        Err(e) => {
+            eprintln!("Could not build RSS content-type header: {:?}", e);
+            process::exit(1);
+        }
+    };
 
     for request in server.incoming_requests() {
-        if request.url() == RSS_FEED_PATH {
-            let orig_channel = fetch_parse_rss_feed().unwrap();
-            let filtered_channel = filter_rss_channel(orig_channel);
-            let response = Response::from_string(filtered_channel.to_string()).with_header(
-                tiny_http::Header::from_bytes("Content-Type", "application/rss+xml").unwrap(),
-            );
-            request.respond(response).unwrap();
+        let response = if request.url() == RSS_FEED_PATH {
+            match fetch_parse_rss_feed() {
+                Ok(orig_channel) => {
+                    let filtered_channel = filter_rss_channel(orig_channel);
+                    Response::from_string(filtered_channel.to_string())
+                        .with_header(rss_header.clone())
+                }
+                Err(e) => {
+                    Response::from_string(format!("Error while fetching source RSS: {:?}", e))
+                        .with_status_code(500)
+                }
+            }
+        } else {
+            Response::from_string("Invalid path").with_status_code(404)
+        };
+        match request.respond(response) {
+            Ok(_) => (),
+            Err(e) => println!("Error while sending response: {}", e),
         }
     }
 }
