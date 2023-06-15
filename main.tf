@@ -104,6 +104,27 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy" "lambda_ecs_policy" {
+  name = "lambda_ecs_policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "ecs:DescribeTasks",
+          "ec2:DescribeNetworkInterfaces",
+          "route53:ChangeResourceRecordSets",
+          "route53:ListHostedZones",
+        ],
+        Resource = "*"
+        Effect   = "Allow"
+      }
+    ]
+  })
+}
+
 data "archive_file" "lambda" {
   type        = "zip"
   source_file = "lambda.py"
@@ -117,6 +138,7 @@ resource "aws_lambda_function" "ecs_task_state_change" {
   runtime          = "python3.10"
   handler          = "lambda.lambda_handler"
   source_code_hash = data.archive_file.lambda.output_base64sha256
+  timeout          = 30
 }
 
 resource "aws_cloudwatch_event_target" "ecs_task_state_change_target" {
