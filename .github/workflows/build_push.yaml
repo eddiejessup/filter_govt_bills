@@ -30,15 +30,28 @@ jobs:
             ${{ runner.os }}-docker-
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
-        id: build-image
         run: DOCKER_BUILDKIT=1 docker build -t $ECR_REPOSITORY:$IMAGE_TAG . --cache-from=type=local,src=/tmp/docker-build-cache --cache-to=type=local,dest=/tmp/docker-build-cache
 
       - name: Push Docker image to Amazon ECR
-        id: push-image
         run: |
           docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Install AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
+
+      - name: Create ECS task definition
+        id: register-task-definition
+        run: |
+          TASK_DEFINITION_ARN=$(aws ecs register-task-definition --cli-input-json file://task-definition.json | jq -r .taskDefinition.taskDefinitionArn)
+          echo "::set-output name=task-definition-arn::$TASK_DEFINITION_ARN"
+
+      - name: Update ECS service
+        env:
+          SERVICE_NAME: filter-govt-bills
+        run: |
+          TASK_DEFINITION=${{ steps.register-task-definition.outputs.task-definition-arn }}
+          aws ecs update-service --cluster filter-govt-bills --service $SERVICE_NAME --task-definition $TASK_DEFINITION

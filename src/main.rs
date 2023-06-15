@@ -1,5 +1,6 @@
 use rss::Channel;
 use tiny_http::{Response, Server};
+use std::env;
 
 const RSS_FEED_URL: &str = "https://bills.parliament.uk/rss/publicbills.rss";
 const RSS_FEED_PATH: &str = "/bills.rss";
@@ -43,7 +44,8 @@ fn filter_rss_channel(channel: Channel) -> Channel {
 }
 
 fn main() {
-    let server = Server::http("0.0.0.0:8000").unwrap();
+    let port = env::var("PORT").unwrap_or_else(|_| String::from("80"));
+    let server = Server::http(format!("0.0.0.0:{}", port)).unwrap();
 
     for request in server.incoming_requests() {
         if request.url() == RSS_FEED_PATH {
