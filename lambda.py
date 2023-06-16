@@ -1,12 +1,13 @@
 import boto3
 import os
 
+
 def lambda_handler(event, context):
-    DOMAIN = os.environ['DOMAIN']
-    HOSTED_ZONE_ID = os.environ['HOSTED_ZONE_ID']
-    
+    DOMAIN = os.environ["DOMAIN"]
+    HOSTED_ZONE_ID = os.environ["HOSTED_ZONE_ID"]
+
     if event["detail"]["lastStatus"] == "RUNNING":
-        print('Getting task ARN from event')
+        print("Getting task ARN from event")
         containers = event["detail"]["containers"]
         assert len(containers) == 1
         container = containers[0]
@@ -19,7 +20,12 @@ def lambda_handler(event, context):
             cluster=event["detail"]["clusterArn"], tasks=[task_arn]
         )
         task = response["tasks"][0]
-        network_interface_id = task["attachments"][0]["details"][0]["value"]
+        attachment_details = task["attachments"][0]["details"]
+        network_interface_ids = [
+            e["value"] for e in attachment_details if e["name"] == "networkInterfaceId"
+        ]
+        assert len(network_interface_ids) == 1
+        network_interface_id = network_interface_ids[0]
 
         print("Getting EC2 client")
         ec2 = boto3.client("ec2")

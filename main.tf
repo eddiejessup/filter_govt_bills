@@ -67,21 +67,59 @@ resource "aws_ecs_service" "service" {
   }
 }
 
+data "aws_iam_policy_document" "eventbridge_assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "eventbridge_role" {
+  name = "eventbridge_role"
+
+  assume_role_policy = data.aws_iam_policy_document.eventbridge_assume_role.json
+}
+
+resource "aws_iam_role_policy" "eventbridge_lambda_policy" {
+  name = "eventbridge_lambda_policy"
+  role = aws_iam_role.eventbridge_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "lambda:InvokeFunction",
+        ],
+        Resource = "*"
+        Effect   = "Allow"
+      }
+    ]
+  })
+}
+
 resource "aws_cloudwatch_event_rule" "ecs_task_state_change" {
   name        = "ecs-task-state-change"
   description = "Capture ECS task state change events"
+  role_arn    = aws_iam_role.eventbridge_role.arn
 
   event_pattern = jsonencode({
     source      = ["aws.ecs"],
-    detail-type = ["ECS Task State Change"]
+    detail-type = ["ECS Task State Change"],
     detail = {
-      clusterArn = [aws_ecs_cluster.cluster.arn]
+      clusterArn = [aws_ecs_cluster.cluster.arn],
       lastStatus = ["RUNNING"]
     }
   })
 }
 
-data "aws_iam_policy_document" "assume_role" {
+data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
     effect = "Allow"
 
@@ -96,7 +134,7 @@ data "aws_iam_policy_document" "assume_role" {
 
 resource "aws_iam_role" "lambda_role" {
   name               = "lambda_role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
@@ -145,10 +183,18 @@ resource "aws_lambda_function" "ecs_task_state_change" {
   timeout          = 30
   environment {
     variables = {
-      DOMAIN = "bills.elliotmarsden.com"
+      DOMAIN         = "bills.elliotmarsden.com"
       HOSTED_ZONE_ID = data.aws_route53_zone.existing.id
     }
   }
+}
+
+resource "aws_lambda_permission" "allow_cloudwatch" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ecs_task_state_change.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.ecs_task_state_change.arn
 }
 
 resource "aws_cloudwatch_event_target" "ecs_task_state_change_target" {
