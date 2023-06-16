@@ -15,6 +15,9 @@ terraform {
   required_version = ">= 1.5.0"
 }
 
+# TODO: Make separate Terraform script to create S3 bucket.
+# TODO: Make separate Terraform script to create ECR repository.
+
 provider "aws" {
   region = "eu-west-1"
 }

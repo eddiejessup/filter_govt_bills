@@ -9,8 +9,8 @@ env:
   AWS_REGION: eu-west-1
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_ECR_REPOSITORY: filter-govt-bills
   AWS_ECR_REGISTRY: 125839941772.dkr.ecr.eu-west-1.amazonaws.com
+  AWS_ECR_REPOSITORY: filter-govt-bills
   AWS_ECR_IMAGE_TAG: latest
 
 jobs:
@@ -28,12 +28,16 @@ jobs:
 
       - uses: docker/setup-buildx-action@v2
 
+      - name: Set image URL with commit hash
+        id: set-image-url
+        run: echo "::set-output name=IMAGE_URL::${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:$(git rev-parse --short HEAD)"
+
       - name: Build and push Docker images
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:${{ env.AWS_ECR_IMAGE_TAG }}
+          tags: ${{ steps.set-image-url.outputs.IMAGE_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -55,4 +59,4 @@ jobs:
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve -input=false -var-file=.tfvars -var="image_url=${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:${{ env.AWS_ECR_IMAGE_TAG }}"
+        run: terraform apply -auto-approve -input=false -var-file=.tfvars -var="image_url=${{ steps.set-image-url.outputs.IMAGE_URL }}"
