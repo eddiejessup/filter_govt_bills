@@ -1,47 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.16"
-    }
-  }
-
-  backend "s3" {
-    bucket = "filter-govt-bills"
-    region = "eu-west-1"
-    key    = "terraform.tfstate"
-  }
-
-  required_version = ">= 1.5.0"
-}
-
-# TODO: Make separate Terraform script to create S3 bucket.
-# TODO: Make separate Terraform script to create ECR repository.
-
-provider "aws" {
-  region = "eu-west-1"
-}
-
-variable "image_url" {
-  description = "URL of the Docker image to use"
-  type        = string
-}
-
-variable "port" {
-  description = "Port that the application should listen on"
-  type        = number
-}
-
-variable "domain" {
-  description = "The name of the domain to serve the application at"
-  type        = string
-}
-
-variable "subdomain" {
-  description = "The name of the sub-domain to serve the application at"
-  type        = string
-}
-
 locals {
   lambda_source_module_name = "lambda"
 }
@@ -71,17 +27,8 @@ resource "aws_security_group" "main" {
   vpc_id = aws_default_vpc.default.id
 
   ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
+    from_port   = var.port
+    to_port     = var.port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -121,6 +68,10 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_policy_attachment" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+data "aws_ecr_repository" "service" {
+  name = var.repository_name
+}
+
 resource "aws_ecs_task_definition" "task" {
   family                   = "filter-govt-bills"
   requires_compatibilities = ["FARGATE"]
@@ -131,7 +82,7 @@ resource "aws_ecs_task_definition" "task" {
   container_definitions = jsonencode([
     {
       name      = "filter-govt-bills"
-      image     = var.image_url
+      image     = "${data.aws_ecr_repository.service.repository_url}:${var.image_tag}"
       cpu       = 256
       memory    = 512
       essential = true

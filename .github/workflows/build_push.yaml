@@ -6,12 +6,8 @@ on:
       - main
 
 env:
-  AWS_REGION: eu-west-1
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_ECR_REGISTRY: 125839941772.dkr.ecr.eu-west-1.amazonaws.com
-  AWS_ECR_REPOSITORY: filter-govt-bills
-  AWS_ECR_IMAGE_TAG: latest
 
 jobs:
   build-and-push:
@@ -21,42 +17,64 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Build and push image.
+      # Set up Terraform.
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2.0.3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform init
+        working-directory: infra/
+        run: terraform init
+
+      - name: Terraform format
+        working-directory: infra/
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        working-directory: infra/
+        run: terraform validate
+
+      # Set up build resources.
+
+      - name: Set image tag as commit hash
+        id: set-image-tag
+        run: echo "TAG=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Apply Terraform build configuration to create build resources
+        working-directory: infra/
+        id: deploy-build
+        run: |
+          terraform apply -target=module.build -auto-approve -input=false -var="image_tag=${{ steps.set-image-tag.outputs.TAG }}"
+          REPO_URL=$(terraform output -raw repository_url)
+          echo "REPO_URL=$REPO_URL" >> $GITHUB_OUTPUT
+
+      - name: Set destination image URL
+        id: set-image-url
+        run: |
+          URL="${{ steps.deploy-build.outputs.REPO_URL }}:${{ steps.set-image-tag.outputs.TAG }}
+          echo "URL=$URL" >> $GITHUB_OUTPUT
+
+      # Build and push the image.
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
       - uses: docker/setup-buildx-action@v2
 
-      - name: Set image URL with commit hash
-        id: set-image-url
-        run: echo "IMAGE_URL=${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
       - name: Build and push Docker images
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ${{ steps.set-image-url.outputs.IMAGE_URL }}
+          tags: ${{ steps.set-image-url.outputs.URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # Deploy.
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2.0.3
-        with:
-          terraform_version: 1.5.0
-
-      - name: Terraform init
-        run: terraform init
-
-      - name: Terraform format
-        run: terraform fmt -check
-
-      - name: Terraform validate
-        run: terraform validate
-
-      - name: Terraform Apply
+      - name: Apply Terraform deploy configuration to create deployment resources
+        working-directory: infra/
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve -input=false -var-file=.tfvars -var="image_url=${{ steps.set-image-url.outputs.IMAGE_URL }}"
+        run: terraform apply -auto-approve -input=false -var="image_tag=${{ steps.set-image-tag.outputs.TAG }}"
