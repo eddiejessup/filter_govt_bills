@@ -6,7 +6,13 @@ terraform {
     }
   }
 
-  required_version = ">= 1.2.0"
+  backend "s3" {
+    bucket = "filter-govt-bills"
+    region = "eu-west-1"
+    key    = "terraform.tfstate"
+  }
+
+  required_version = ">= 1.5.0"
 }
 
 provider "aws" {
