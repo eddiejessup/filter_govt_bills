@@ -35,11 +35,55 @@ variable "subdomain" {
 
 locals {
   lambda_source_module_name = "lambda"
-  # TODO: Inline this if we can just refer to it once.
-  lambda_zip_file_name = "lambda_function_payload.zip"
 }
 
 data "aws_region" "current" {}
+
+# Assumed to be 172.31.0.0/16
+# """
+# The aws_default_vpc resource behaves differently from normal resources
+# in that if a default VPC exists, Terraform does not create this resource,
+# but instead "adopts" it into management.
+# """
+resource "aws_default_vpc" "default" {
+}
+
+resource "aws_subnet" "subnet_1" {
+  vpc_id     = aws_default_vpc.default.id
+  cidr_block = "172.31.32.0/24"
+}
+
+resource "aws_subnet" "subnet_2" {
+  vpc_id     = aws_default_vpc.default.id
+  cidr_block = "172.31.33.0/24"
+}
+
+resource "aws_security_group" "main" {
+  vpc_id = aws_default_vpc.default.id
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
 resource "aws_ecs_cluster" "cluster" {
   name = "filter-govt-bills"
@@ -109,13 +153,11 @@ resource "aws_ecs_service" "service" {
   launch_type     = "FARGATE"
   desired_count   = 1
   network_configuration {
-    # TODO: Handle as resources.
     subnets = [
-      "subnet-091146fb6d105e214",
-      "subnet-f91e609c",
+      aws_subnet.subnet_1.id,
+      aws_subnet.subnet_2.id,
     ]
-    # TODO: Handle as resource.
-    security_groups  = ["sg-81a3ace4"]
+    security_groups  = [aws_security_group.main.id]
     assign_public_ip = true
   }
 }
@@ -218,7 +260,7 @@ resource "aws_iam_role_policy" "lambda_ecs_policy" {
 data "archive_file" "lambda" {
   type        = "zip"
   source_file = "${local.lambda_source_module_name}.py"
-  output_path = local.lambda_zip_file_name
+  output_path = "lambda_function_payload.zip"
 }
 
 data "aws_route53_zone" "existing" {
