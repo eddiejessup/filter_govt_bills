@@ -207,8 +207,9 @@ resource "aws_cloudwatch_event_rule" "ecs_task_state_change" {
     source      = ["aws.ecs"],
     detail-type = ["ECS Task State Change"],
     detail = {
-      clusterArn = [aws_ecs_cluster.cluster.arn],
-      lastStatus = ["RUNNING"]
+      clusterArn    = [aws_ecs_cluster.cluster.arn],
+      lastStatus    = ["RUNNING"]
+      desiredStatus = ["RUNNING"]
     }
   })
 }
