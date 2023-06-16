@@ -48,14 +48,11 @@ jobs:
         id: deploy-build
         run: |
           terraform apply -target=module.build -auto-approve -input=false -var="image_tag=${{ steps.set-image-tag.outputs.TAG }}"
-          REPO_URL=$(terraform output -raw repository_url)
-          echo "REPO_URL=$REPO_URL" >> $GITHUB_OUTPUT
+          echo "REPO_URL=$(terraform output -raw repository_url)" >> $GITHUB_OUTPUT
 
       - name: Set destination image URL
         id: set-image-url
-        run: |
-          URL="${{ steps.deploy-build.outputs.REPO_URL }}:${{ steps.set-image-tag.outputs.TAG }}
-          echo "URL=$URL" >> $GITHUB_OUTPUT
+        run: echo "URL=${{ steps.deploy-build.outputs.REPO_URL }}:${{ steps.set-image-tag.outputs.TAG }}" >> $GITHUB_OUTPUT
 
       # Build and push the image.
 
