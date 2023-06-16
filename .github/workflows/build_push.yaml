@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image and Deploy
 
 on:
   push:
@@ -12,8 +12,6 @@ env:
   AWS_ECR_REPOSITORY: filter-govt-bills
   AWS_ECR_REGISTRY: 125839941772.dkr.ecr.eu-west-1.amazonaws.com
   AWS_ECR_IMAGE_TAG: latest
-  AWS_ECS_CLUSTER_NAME: filter-govt-bills
-  AWS_ECS_SERVICE_NAME: filter-govt-bills
 
 jobs:
   build-and-push:
@@ -22,6 +20,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      # Build and push image.
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
@@ -36,17 +36,23 @@ jobs:
           tags: ${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:${{ env.AWS_ECR_IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          
-      - name: Install AWS CLI
-        uses: unfor19/install-aws-cli-action@v1
 
-      - name: Create ECS task definition
-        id: register-task-definition
-        run: |
-          TASK_DEFINITION_ARN=$(aws ecs register-task-definition --cli-input-json file://task-definition.json | jq -r .taskDefinition.taskDefinitionArn)
-          echo "task-definition-arn=$TASK_DEFINITION_ARN" >> $GITHUB_OUTPUT
+      # Deploy.
 
-      - name: Update ECS service
-        run: |
-          TASK_DEFINITION_ARN=${{ steps.register-task-definition.outputs.task-definition-arn }}
-          aws ecs update-service --cluster $AWS_ECS_CLUSTER_NAME --service $AWS_ECS_SERVICE_NAME --task-definition $TASK_DEFINITION_ARN
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2.0.3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform format
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -input=false -var-file=.tfvars -var="image_url=${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:${{ env.AWS_ECR_IMAGE_TAG }}"
