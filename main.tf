@@ -13,37 +13,88 @@ provider "aws" {
   region = "eu-west-1"
 }
 
+variable "image_url" {
+  description = "URL of the Docker image to use"
+  type        = string
+}
+
+variable "port" {
+  description = "Port that the application should listen on"
+  type        = number
+}
+
+variable "domain" {
+  description = "The name of the domain to serve the application at"
+  type        = string
+}
+
+variable "subdomain" {
+  description = "The name of the sub-domain to serve the application at"
+  type        = string
+}
+
+locals {
+  lambda_source_module_name = "lambda"
+  # TODO: Inline this if we can just refer to it once.
+  lambda_zip_file_name = "lambda_function_payload.zip"
+}
+
+data "aws_region" "current" {}
+
 resource "aws_ecs_cluster" "cluster" {
   name = "filter-govt-bills"
+}
+
+data "aws_iam_policy_document" "ecs_tasks_assume_role" {
+  statement {
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "ecs_execution_role" {
+  name               = "ecs_execution_role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_policy_attachment" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
 resource "aws_ecs_task_definition" "task" {
   family                   = "filter-govt-bills"
   requires_compatibilities = ["FARGATE"]
   cpu                      = 256
-  memory                   = 1024
+  memory                   = 512
   network_mode             = "awsvpc"
-  execution_role_arn       = "arn:aws:iam::125839941772:role/ecs-execution"
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
   container_definitions = jsonencode([
     {
       name      = "filter-govt-bills"
-      image     = "125839941772.dkr.ecr.eu-west-1.amazonaws.com/filter-govt-bills:latest"
+      image     = var.image_url
       cpu       = 256
       memory    = 512
       essential = true
       portMappings = [
         {
-          containerPort = 80
+          containerPort = var.port
         }
       ],
       environment = [
-        { "name" : "PORT", "value" : "80" }
+        { "name" : "PORT", "value" : tostring(var.port) }
       ],
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           "awslogs-group"         = "/ecs/filter-govt-bills"
-          "awslogs-region"        = "eu-west-1"
+          "awslogs-region"        = data.aws_region.current.name
           "awslogs-stream-prefix" = "ecs"
         }
       }
@@ -58,10 +109,12 @@ resource "aws_ecs_service" "service" {
   launch_type     = "FARGATE"
   desired_count   = 1
   network_configuration {
+    # TODO: Handle as resources.
     subnets = [
       "subnet-091146fb6d105e214",
       "subnet-f91e609c",
     ]
+    # TODO: Handle as resource.
     security_groups  = ["sg-81a3ace4"]
     assign_public_ip = true
   }
@@ -81,8 +134,7 @@ data "aws_iam_policy_document" "eventbridge_assume_role" {
 }
 
 resource "aws_iam_role" "eventbridge_role" {
-  name = "eventbridge_role"
-
+  name               = "eventbridge_role"
   assume_role_policy = data.aws_iam_policy_document.eventbridge_assume_role.json
 }
 
@@ -165,25 +217,25 @@ resource "aws_iam_role_policy" "lambda_ecs_policy" {
 
 data "archive_file" "lambda" {
   type        = "zip"
-  source_file = "lambda.py"
-  output_path = "lambda_function_payload.zip"
+  source_file = "${local.lambda_source_module_name}.py"
+  output_path = local.lambda_zip_file_name
 }
 
 data "aws_route53_zone" "existing" {
-  name = "elliotmarsden.com"
+  name = var.domain
 }
 
 resource "aws_lambda_function" "ecs_task_state_change" {
   function_name    = "route53_sync"
   role             = aws_iam_role.lambda_role.arn
-  filename         = "lambda_function_payload.zip"
+  filename         = data.archive_file.lambda.output_path
   runtime          = "python3.10"
-  handler          = "lambda.lambda_handler"
+  handler          = "${local.lambda_source_module_name}.lambda_handler"
   source_code_hash = data.archive_file.lambda.output_base64sha256
   timeout          = 30
   environment {
     variables = {
-      DOMAIN         = "bills.elliotmarsden.com"
+      DOMAIN         = "${var.subdomain}.${var.domain}"
       HOSTED_ZONE_ID = data.aws_route53_zone.existing.id
     }
   }
