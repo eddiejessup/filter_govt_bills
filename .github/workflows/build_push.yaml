@@ -30,7 +30,7 @@ jobs:
 
       - name: Set image URL with commit hash
         id: set-image-url
-        run: echo "::set-output name=IMAGE_URL::${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:$(git rev-parse --short HEAD)"
+        run: echo "IMAGE_URL=${{ env.AWS_ECR_REGISTRY }}/${{ env.AWS_ECR_REPOSITORY }}:$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker images
         uses: docker/build-push-action@v4
