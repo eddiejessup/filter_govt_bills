@@ -1,7 +1,3 @@
-locals {
-  region = "eu-west-1"
-}
-
 terraform {
   required_providers {
     aws = {
@@ -12,7 +8,7 @@ terraform {
 
   backend "s3" {
     bucket = "filter-govt-bills"
-    region = local.region
+    region = "eu-west-1"
     key    = "terraform.tfstate"
   }
 
@@ -20,7 +16,7 @@ terraform {
 }
 
 provider "aws" {
-  region = local.region
+  region = "eu-west-1"
 }
 
 module "build" {
